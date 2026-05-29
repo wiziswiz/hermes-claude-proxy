@@ -1,173 +1,78 @@
 #!/usr/bin/env node
 
-const express = require('express');
-const https = require('https');
-const fs = require('fs');
-const { execFileSync } = require('child_process');
-const { log } = require('./src/logger');
-const { rewriteSystemForBillingClassifier } = require('./src/rewrite');
+const { readConfig, usage } = require('./src/config');
+const { CredentialManager } = require('./src/credentials');
+const { createLogger } = require('./src/logger');
+const { createProxyApp } = require('./src/proxy');
 
-const app = express();
-const PORT = process.env.PORT || 4523;
-const CREDENTIALS_PATH=*** '.claude', '.credentials.json');
+async function main(argv = process.argv.slice(2), env = process.env) {
+  const config = readConfig(argv, env);
 
-let cachedCredentials = null;
-let refreshInProgress = null;
-
-function readCredentialsFromKeychain() {
-  try {
-    const raw = execFileSync('security', [
-      'find-generic-password',
-      '-s', 'Claude Code-credentials',
-      '-w'
-    ], { encoding: 'utf8' }).trim();
-
-    if (!raw) return null;
-
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.claudeAiOauth?.accessToken) return parsed.claudeAiOauth;
-      if (parsed.accessToken) return parsed;
-    } catch {
-      if (raw.startsWith('sk-ant-')) {
-        return { accessToken: raw, refreshToken: null, expiresAt: Date.now() + 8 * 60 * 60 * 1000 };
-      }
-    }
-    return null;
-  } catch {
+  if (config.help) {
+    process.stdout.write(usage());
     return null;
   }
-}
 
-function readCredentials() {
-  try {
-    const raw = fs.readFileSync(CREDENTIALS_PATH, 'utf-8');
-    const parsed = JSON.parse(raw);
-    cachedCredentials = parsed.claudeAiOauth;
-    if (cachedCredentials?.accessToken) return cachedCredentials;
-  } catch {}
-
-  const keychainCreds = readCredentialsFromKeychain();
-  if (keychainCreds) {
-    cachedCredentials = keychainCreds;
-    return cachedCredentials;
+  if (config.versionOnly) {
+    process.stdout.write(`${config.version}\n`);
+    return null;
   }
 
-  return null;
-}
+  const logger = createLogger({ debug: config.debug, jsonLogs: config.jsonLogs });
+  const credentials = new CredentialManager(config, logger);
 
-function isTokenExpired(creds) {
-  if (!creds?.expiresAt) return true;
-  return Date.now() + 300_000 >= creds.expiresAt;
-}
-
-async function refreshToken(creds) {
-  if (!creds?.refreshToken) throw new Error('No refresh token');
-
-  if (refreshInProgress) return refreshInProgress;
-
-  refreshInProgress = (async () => {
-    log('Refreshing OAuth token...');
-    const body = JSON.stringify({
-      grant_type: 'refresh_token',
-      refresh_token: creds.refreshToken,
-      client_id: '9d1c252f5e',
-      scope: 'user:inference user:sessions:claude_code'
-    });
-
-    const res = await fetch('https://api.anthropic.com/v1/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body
-    });
-
-    if (!res.ok) {
-      throw new Error(`Refresh failed: ${res.status}`);
-    }
-
-    const data = await res.json();
-    cachedCredentials = {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token || creds.refreshToken,
-      expiresAt: Date.now() + data.expires_in * 1000
-    };
-
-    try {
-      fs.writeFileSync(CREDENTIALS_PATH, JSON.stringify({ claudeAiOauth: cachedCredentials }, null, 2), { mode: 0o600 });
-    } catch {}
-
-    return cachedCredentials;
-  })();
-
-  try { return await refreshInProgress; } finally { refreshInProgress = null; }
-}
-
-function getAccessToken() {
-  if (!cachedCredentials) readCredentials();
-  if (cachedCredentials && isTokenExpired(cachedCredentials)) {
-    refreshToken(cachedCredentials).catch(e => log('Refresh failed:', e.message));
-  }
-  return cachedCredentials?.accessToken || null;
-}
-
-app.use(express.json({ limit: '50mb' }));
-
-app.post('/v1/messages', async (req, res) => {
   try {
-    const rewritten = rewriteSystemForBillingClassifier(req.body);
-    const token = getAccessToken();
-
-    if (!token) {
-      return res.status(401).json({ error: 'No valid Claude OAuth token' });
-    }
-
-    const options = {
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'anthropic-version': '2023-06-01',
-        'x-app': 'cli'
-      }
-    };
-
-    const proxyReq = https.request(options, (proxyRes) => {
-      if (proxyRes.statusCode >= 400) {
-        let body = '';
-        proxyRes.on('data', chunk => body += chunk);
-        proxyRes.on('end', () => log(`Anthropic ${proxyRes.statusCode}:`, body));
-      }
-      res.writeHead(proxyRes.statusCode, proxyRes.headers);
-      proxyRes.pipe(res);
-    });
-
-    proxyReq.on('error', err => {
-      log('Proxy error:', err.message);
-      res.status(500).json({ error: err.message });
-    });
-
-    proxyReq.write(JSON.stringify(rewritten));
-    proxyReq.end();
-
+    await credentials.initialize();
   } catch (err) {
-    log('Error:', err.message);
-    res.status(500).json({ error: err.message });
+    logger.error('startup.credentials', 'Credential initialization failed', { error: err.message });
+    if (config.requireTokenAtStartup) throw err;
   }
-});
 
-app.get('/health', (req, res) => {
-  const creds = readCredentials();
-  res.json({
-    status: 'ok',
-    version: '0.1.0-hermes',
-    token_loaded: !!creds?.accessToken,
-    source: creds ? (fs.existsSync(CREDENTIALS_PATH) ? 'file' : 'keychain') : 'none'
+  const status = credentials.getStatus();
+  if (!status.ready) {
+    const message = 'Proxy is starting without a currently valid token';
+    if (config.requireTokenAtStartup) throw new Error(`${message}: ${status.last_error || 'token not ready'}`);
+    logger.warn('startup.not_ready', message, { token: status });
+  }
+
+  const { app } = createProxyApp({ config, logger, credentials });
+  const server = app.listen(config.port, config.host, () => {
+    logger.info('startup.listen', 'Hermes Claude Proxy listening', {
+      host: config.host,
+      port: config.port,
+      version: config.version,
+      auth_header_format: config.authHeaderFormat,
+      tool_mode: config.toolMode,
+      tool_schema_mode: config.toolSchemaMode,
+      tool_name_mode: config.toolNameMode,
+      tool_groups: config.toolGroups,
+      tool_allowlist: config.toolAllowlist,
+      debug: config.debug,
+      dump_requests: config.dumpRequests,
+    });
   });
-});
 
-app.listen(PORT, () => {
-  log(`Hermes Claude Proxy listening on port ${PORT}`);
-  readCredentials();
-});
+  function shutdown(signal) {
+    logger.info('shutdown.signal', 'Shutting down', { signal });
+    credentials.stop();
+    server.close(() => {
+      logger.info('shutdown.complete', 'Server closed');
+      process.exit(0);
+    });
+  }
+
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+
+  return { server, credentials, config };
+}
+
+if (require.main === module) {
+  main().catch(err => {
+    const logger = createLogger({ debug: process.env.DEBUG === '1' || process.env.DEBUG === 'true' });
+    logger.error('startup.failed', 'Fatal startup error', { error: err.message });
+    process.exit(1);
+  });
+}
+
+module.exports = { main };

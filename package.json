@@ -4,7 +4,10 @@
   "description": "Claude Max proxy optimized for Hermes",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "start:debug": "node index.js --debug",
+    "check": "node --check index.js && for f in src/*.js; do node --check \"$f\" || exit 1; done",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.19.0"

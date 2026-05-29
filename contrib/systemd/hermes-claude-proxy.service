@@ -1,0 +1,19 @@
+[Unit]
+Description=Hermes Claude Proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/hermes-claude-proxy
+ExecStart=/usr/bin/node /opt/hermes-claude-proxy/index.js --host 127.0.0.1 --port 4524
+Restart=always
+RestartSec=3
+Environment=AUTH_HEADER_FORMAT=auto
+Environment=STARTUP_VALIDATE=1
+
+# Override this if Claude credentials live somewhere else.
+Environment=CREDENTIALS_PATH=%h/.claude/.credentials.json
+
+[Install]
+WantedBy=default.target
