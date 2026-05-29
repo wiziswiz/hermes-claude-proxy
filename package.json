@@ -1,0 +1,13 @@
+{
+  "name": "hermes-claude-proxy",
+  "version": "0.1.0",
+  "description": "Claude Max proxy optimized for Hermes",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0"
+  },
+  "license": "MIT"
+}
