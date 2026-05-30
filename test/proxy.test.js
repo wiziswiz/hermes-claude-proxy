@@ -15,10 +15,10 @@ test('shouldRewriteBody covers messages and count_tokens', () => {
 
 test('summarizeSystem reports billing header location', () => {
   const summary = summarizeSystem([
-    { type: 'text', text: 'You are Claude Code, test' },
     { type: 'text', text: 'x-anthropic-billing-header: test' },
+    { type: 'text', text: 'You are Claude Code, test' },
   ]);
 
   assert.match(summary, /blocks\[2\]/);
-  assert.match(summary, /billing@1/);
+  assert.match(summary, /billing@0/);
 });

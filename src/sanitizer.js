@@ -555,6 +555,18 @@ function sanitizeTools(tools, report) {
   return tools;
 }
 
+function renameTools(tools, report) {
+  if (!Array.isArray(tools)) return tools;
+
+  for (let index = 0; index < tools.length; index += 1) {
+    const tool = tools[index];
+    if (!tool || typeof tool !== 'object') continue;
+    tool.name = renameToolName(tool.name, `tools[${index}].name`, report);
+  }
+
+  return tools;
+}
+
 function neutralizeTools(tools, report) {
   if (!Array.isArray(tools)) return tools;
 
@@ -644,6 +656,23 @@ function sanitizeMessages(messages, report) {
     }
 
     return next;
+  });
+}
+
+function renameMessageToolUses(messages, report) {
+  if (!Array.isArray(messages)) return messages;
+
+  return messages.map((message, messageIndex) => {
+    if (!message || typeof message !== 'object' || !Array.isArray(message.content)) return message;
+    return {
+      ...message,
+      content: message.content.map((block, blockIndex) => {
+        if (!block || typeof block !== 'object' || block.type !== 'tool_use') return block;
+        const next = { ...block };
+        next.name = renameToolName(next.name, `messages[${messageIndex}].content[${blockIndex}].name`, report);
+        return next;
+      }),
+    };
   });
 }
 
@@ -786,12 +815,20 @@ function sanitizeRequest(body, options = {}) {
 
   const next = cloneJson(body);
   const report = createChangeReport();
+  const identitySanitization = options.identitySanitization !== false;
 
   if (options.stripThinking) stripThinkingFields(next, report);
 
-  next.system = sanitizeSystem(next.system, report);
-  next.messages = sanitizeMessages(next.messages, report);
-  next.tools = sanitizeTools(next.tools, report);
+  if (identitySanitization) {
+    next.system = sanitizeSystem(next.system, report);
+    next.messages = sanitizeMessages(next.messages, report);
+    next.tools = sanitizeTools(next.tools, report);
+  } else {
+    next.tools = renameTools(next.tools, report);
+    next.messages = renameMessageToolUses(next.messages, report);
+    report.normalize('identity-sanitization', 'disabled');
+  }
+
   if (options.toolSchemaMode === 'compact') compactToolSchemas(next.tools, report);
   if (options.normalizeShape) normalizeClaudeCodeShape(next, report);
   if (options.dropTools) {

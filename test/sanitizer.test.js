@@ -63,6 +63,54 @@ test('sanitizeRequest rewrites system and tool descriptions without mutating ori
   assert.ok(report.normalizations.some(item => item.detail === 'tools[0].name:mcp_skill_manage->mcp_skill_edit'));
 });
 
+test('sanitizeRequest can disable identity rewriting while keeping tool compatibility', () => {
+  const { body, report } = sanitizeRequest({
+    system: [{ type: 'text', text: 'Active Hermes profile uses ~/.hermes.' }],
+    messages: [
+      { role: 'user', content: 'Please inspect Hermes memory.' },
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_1',
+            name: 'mcp_session_search',
+            input: { query: 'Hermes profile' },
+          },
+        ],
+      },
+    ],
+    tools: [
+      {
+        name: 'mcp_session_search',
+        description: 'Search Hermes memory.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Hermes query.' },
+          },
+        },
+      },
+    ],
+  }, {
+    identitySanitization: false,
+    toolSchemaMode: 'compact',
+    toolNameMode: 'neutral',
+  });
+
+  assert.equal(body.system[0].text, 'Active Hermes profile uses ~/.hermes.');
+  assert.equal(body.messages[0].content, 'Please inspect Hermes memory.');
+  assert.equal(body.messages[1].content[0].name, 'history_lookup');
+  assert.equal(body.messages[1].content[0].input.query, 'Hermes profile');
+  assert.equal(body.tools[0].name, 'history_lookup');
+  assert.equal(body.tools[0].description, 'Use the conversation search tool.');
+  assert.equal(body.tools[0].input_schema.properties.query.description, undefined);
+  assert.deepEqual(report.replacements, []);
+  assert.ok(report.normalizations.some(item => item.label === 'identity-sanitization' && item.detail === 'disabled'));
+  assert.ok(report.normalizations.some(item => item.label === 'tool-name'));
+  assert.ok(report.normalizations.some(item => item.label === 'neutral-tool-name'));
+});
+
 test('auditHermesLeaks detects non-sanitized identity and operational labels', () => {
   const findings = auditHermesLeaks({
     system: [{ type: 'text', text: 'Active Hermes profile writes ~/.hermes and uses HERMES_HOME.' }],

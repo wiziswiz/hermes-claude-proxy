@@ -11,12 +11,13 @@ It reads Claude Code credentials, rewrites Hermes system prompts into the Claude
 - Uses `AUTH_HEADER_FORMAT=auto` by default:
   - `sk-ant-api*` -> `x-api-key`
   - `sk-ant-*`, `cc-*`, `eyJ*` -> `Authorization: Bearer`
-- Rewrites `/v1/messages` and `/v1/messages/count_tokens` to exactly two system blocks: Claude Code preamble plus billing header.
-- Sanitizes high-confidence Hermes identity strings in system prompts and tool descriptions.
+- Rewrites `/v1/messages` and `/v1/messages/count_tokens` to exactly two system blocks: signed Claude Code billing header plus Claude Code preamble.
+- Keeps Hermes/OpenClaw identity text and paths intact by default; the older identity rewrite layer can be enabled for diagnostics.
 - Audits rewritten requests for remaining Hermes-specific paths, env vars, and tool labels.
 - Strips Hermes `thinking` fields by default for classifier compatibility.
 - Normalizes Claude Code-like body shape by dropping `temperature`, dropping `tool_choice:auto`, and collapsing text-only content arrays to strings.
-- Moves Hermes' original system content into the first user message as `<system>...</system>`.
+- Moves Hermes' original system content into the first user message as `<system-reminder>...</system-reminder>`.
+- Repairs orphaned historical `tool_use` / `tool_result` pairs before forwarding.
 - Desanitizes successful Anthropic responses before returning them to Hermes.
 - Forwards other `/v1/*` endpoints to Anthropic.
 - Exposes `/health`, `/ready`, and `/version`.
@@ -42,7 +43,7 @@ Equivalent:
 node index.js --host 127.0.0.1 --port 4524
 ```
 
-The default run mode is the validated Hermes-compatible production shape: all current Hermes tool groups, compact tool schemas, neutral upstream tool names, and request dumps disabled unless debug is enabled.
+The default run mode is the validated Hermes-compatible production shape: all current Hermes tool groups, compact tool schemas, original upstream tool names, identity/path rewriting disabled, leak auditing disabled, and request dumps disabled unless debug is enabled.
 
 Useful flags:
 
@@ -53,6 +54,7 @@ node index.js --port 4525
 node index.js --credentials-path ~/.claude/.credentials.json
 node index.js --auth-header-format auto
 node index.js --no-sanitize-hermes
+node index.js --no-identity-sanitization
 node index.js --no-strip-thinking
 node index.js --no-normalize-shape
 node index.js --drop-tools
@@ -62,6 +64,7 @@ node index.js --tool-name-mode neutral
 node index.js --tool-groups core,browser
 node index.js --tool-allowlist mcp_terminal,mcp_read_file,mcp_search_files
 node index.js --drop-system-context
+node index.js --leak-audit
 node index.js --strict-leak-check
 node index.js --help
 ```
@@ -105,15 +108,15 @@ request-<id>-sanitized.json
 request-<id>-rewritten.json
 ```
 
-The rewritten file should show `system` as exactly two blocks with the billing header at index `1`.
+The rewritten file should show `system` as exactly two blocks with the signed billing header at index `0` and the Claude Code preamble at index `1`.
 
-The sanitizer intentionally has two tiers:
+The sanitizer intentionally has separate compatibility layers:
 
-- It rewrites high-confidence identity strings such as `Hermes Agent`, `hermes-agent`, `Nous Research`, and Hermes docs URLs.
-- It rewrites Hermes runtime labels such as `~/.hermes`, `HERMES_HOME`, `session_search`, `skill_manage`, `delegate_task`, and `heartbeat` in the upstream request.
-- It also rewrites imported OpenClaw labels and renames sensitive Hermes tool names such as `mcp_session_search`, `mcp_skill_manage`, and `mcp_delegate_task`.
-- It desanitizes successful responses so Hermes receives its original runtime labels again.
-- It audits remaining Hermes/OpenClaw labels before forwarding.
+- By default it keeps Hermes/OpenClaw identity strings, paths, and tool names intact.
+- It still strips incompatible thinking fields, compacts tool schemas, normalizes the Claude Code request shape, and rewrites a few legacy sensitive tool names such as `mcp_session_search`, `mcp_skill_manage`, and `mcp_delegate_task`.
+- If `IDENTITY_SANITIZATION=1`, it also rewrites high-confidence identity strings and runtime labels such as `Hermes Agent`, `~/.hermes`, `HERMES_HOME`, `SOUL.md`, `session_search`, `skill_manage`, `delegate_task`, and imported OpenClaw labels.
+- If `TOOL_NAME_MODE=neutral`, it maps selected `mcp_*` tool names to generic upstream aliases and restores them in responses.
+- If `LEAK_AUDIT=1` or `STRICT_LEAK_CHECK=1`, it audits remaining Hermes/OpenClaw labels before forwarding.
 
 If you want the proxy to reject requests that still contain non-info leak findings before contacting Anthropic, run with:
 
@@ -127,7 +130,8 @@ Tool compatibility modes:
 - `TOOL_MODE=core`: keep only terminal/code/process/read/search/patch/write/todo tools.
 - `TOOL_MODE=none` or `DROP_TOOLS=1`: remove all tools.
 - `TOOL_SCHEMA_MODE=compact`: keep all selected tools, but replace long tool descriptions with short neutral descriptions and strip nested schema descriptions. This is the default.
-- `TOOL_NAME_MODE=neutral`: rename tool names in transit and restore them before Hermes sees tool calls. This is the default.
+- `TOOL_NAME_MODE=preserve`: keep upstream tool names as-is. This is the default.
+- `TOOL_NAME_MODE=neutral`: rename tool names in transit and restore them before Hermes sees tool calls. Use only as a fallback if preserving names regresses.
 - `TOOL_GROUPS=core,browser`: keep named groups. Available groups: `core`, `browser`, `desktop`, `automation`, `memory`, `skills`, `media`, `comms`, `search`.
 - `TOOL_ALLOWLIST=mcp_terminal,mcp_read_file`: keep exactly the listed tools. Original names such as `mcp_session_search` are accepted and normalized before matching. When set, it overrides `TOOL_GROUPS`.
 
@@ -149,18 +153,26 @@ Common variables:
 - `CREDENTIALS_PATH`: Claude credentials file path
 - `ANTHROPIC_TOKEN`: direct token override
 - `ANTHROPIC_BASE_URL`: upstream Anthropic URL
+- `CLAUDE_CONFIG_PATH`: optional `.claude.json` path used to copy Claude account metadata into request `metadata.user_id`
+- `CLAUDE_CODE_VERSION`: Claude Code version used in the signed billing header, default `2.1.112`
+- `CLAUDE_CODE_ENTRYPOINT`: Claude Code entrypoint used in the signed billing header, default `sdk-cli`
+- `CLAUDE_CODE_BILLING_SALT`: salt used for the billing-header signature
+- `CLAUDE_CODE_STAINLESS_PACKAGE_VERSION`: Stainless package version header, default `0.81.0`
+- `CLAUDE_CODE_STAINLESS_RUNTIME_VERSION`: Stainless runtime version header, default `v22.11.0`
 - `DEBUG`: enables debug logs and request dumps
 - `JSON_LOGS`: emits structured JSON logs
 - `DUMP_REQUESTS`: writes per-request debug dumps
 - `DUMP_DIR`: request dump directory
 - `SANITIZE_HERMES`: enables Hermes identity sanitization, default `1`
-- `STRICT_LEAK_CHECK`: rejects requests with non-info leak findings, default `0`
+- `IDENTITY_SANITIZATION`: rewrites Hermes/OpenClaw identity text and paths when `SANITIZE_HERMES=1`, default `0`. Leave off for normal use; enable only if you need to debug an upstream classifier regression.
+- `LEAK_AUDIT`: logs Hermes/OpenClaw leak findings without rejecting requests, default `0`
+- `STRICT_LEAK_CHECK`: rejects requests with non-info leak findings, default `0`; enables leak auditing for that request path
 - `STRIP_THINKING`: removes Hermes `thinking`, `budget_tokens`, and `output_config` fields, default `1`
 - `NORMALIZE_SHAPE`: removes `temperature`, removes `tool_choice:auto`, and collapses text-only content arrays, default `1`
 - `DROP_TOOLS`: diagnostic mode that removes all tool definitions, default `0`
 - `TOOL_MODE`: tool compatibility mode, `all`, `core`, or `none`, default `all`
 - `TOOL_SCHEMA_MODE`: `full` or `compact`; compact keeps tool availability while reducing classifier-visible description text, default `compact`
-- `TOOL_NAME_MODE`: `preserve` or `neutral`; neutral maps `mcp_*` tool names to less identifying aliases upstream and restores them in responses, default `neutral`
+- `TOOL_NAME_MODE`: `preserve` or `neutral`; neutral maps `mcp_*` tool names to less identifying aliases upstream and restores them in responses, default `preserve`
 - `TOOL_GROUPS`: comma-separated group names to keep, default `core,browser,media,comms,search,memory,skills,desktop,automation`
 - `TOOL_ALLOWLIST`: comma-separated tool names to keep after sanitization, overrides `all`/`core` filtering when set
 - `DROP_SYSTEM_CONTEXT`: diagnostic mode that does not move Hermes' original system context into the user message, default `0`
@@ -199,8 +211,8 @@ If Hermes still gets "out of extra usage":
 - Remove `api_key: dummy` from Hermes config.
 - Check `curl -s http://127.0.0.1:4524/ready`.
 - Run with `DEBUG=1` and inspect the rewritten request dump.
-- Confirm the rewritten request has exactly two system blocks and `cc_entrypoint=cli`.
-- Check `request-<id>-meta.json` for `sanitizer.leak_summary`.
+- Confirm the rewritten request has exactly two system blocks and `cc_entrypoint=sdk-cli`.
+- If running with `LEAK_AUDIT=1`, check `request-<id>-meta.json` for `sanitizer.leak_summary`.
 - If dropping tools fixes the request but full tools fail, try `TOOL_MODE=core` first. If that passes, add tools back with `TOOL_ALLOWLIST`.
 - If you need Hermes thinking mode for testing, run with `STRIP_THINKING=0`.
 - Check proxy logs for `overage_reason`, `tier`, and upstream status.

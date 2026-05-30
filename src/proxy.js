@@ -64,7 +64,11 @@ function shouldRewriteBody(req) {
 
 function buildTargetUrl(config, req) {
   const base = new URL(config.anthropicBaseUrl);
-  return new URL(req.originalUrl, base.origin);
+  const target = new URL(req.originalUrl, base.origin);
+  if (req.path === '/v1/messages' || req.path === '/v1/messages/count_tokens') {
+    target.searchParams.set('beta', 'true');
+  }
+  return target;
 }
 
 function formatLeakFindingsForLog(findings, includeSamples = false) {
@@ -147,6 +151,7 @@ function createProxyApp({ config, logger, credentials }) {
       if (shouldRewriteBody(req)) {
         if (config.sanitizeHermes) {
           const sanitizedResult = sanitizeRequest(body, {
+            identitySanitization: config.identitySanitization,
             stripThinking: config.stripThinking,
             normalizeShape: config.normalizeShape,
             dropTools: config.dropTools,
@@ -163,7 +168,9 @@ function createProxyApp({ config, logger, credentials }) {
           sessionId: proxySessionId,
           dropExtraSystem: config.dropSystemContext,
         });
-        leakFindings = auditHermesLeaks(rewritten);
+        if (config.leakAudit || config.strictLeakCheck) {
+          leakFindings = auditHermesLeaks(rewritten);
+        }
       }
 
       let payload = rewritten ? JSON.stringify(rewritten) : undefined;
@@ -186,6 +193,8 @@ function createProxyApp({ config, logger, credentials }) {
         session_id: proxySessionId.slice(0, 8),
         sanitizer: shouldRewriteBody(req) ? {
           enabled: config.sanitizeHermes,
+          identity_sanitization: config.identitySanitization,
+          leak_audit: config.leakAudit,
           strict: config.strictLeakCheck,
           strip_thinking: config.stripThinking,
           normalize_shape: config.normalizeShape,
@@ -344,6 +353,8 @@ function createProxyApp({ config, logger, credentials }) {
       port: config.port,
       auth_header_format: config.authHeaderFormat,
       sanitize_hermes: config.sanitizeHermes,
+      identity_sanitization: config.identitySanitization,
+      leak_audit: config.leakAudit,
       strict_leak_check: config.strictLeakCheck,
       strip_thinking: config.stripThinking,
       normalize_shape: config.normalizeShape,

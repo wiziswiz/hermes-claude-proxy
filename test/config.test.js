@@ -9,6 +9,7 @@ test('parseArgs handles flags and inline values', () => {
     '--json-logs=false',
     '--dump-requests',
     '--strict-leak-check',
+    '--leak-audit',
     '--tool-mode',
     'core',
     '--tool-schema-mode',
@@ -18,6 +19,7 @@ test('parseArgs handles flags and inline values', () => {
     '--tool-groups=core,browser',
     '--tool-allowlist=mcp_terminal,mcp_read_file',
     '--no-sanitize-hermes',
+    '--no-identity-sanitization',
     '--auth-header-format',
     'auto',
     '--credentials-path',
@@ -29,12 +31,14 @@ test('parseArgs handles flags and inline values', () => {
   assert.equal(args.jsonLogs, false);
   assert.equal(args.dumpRequests, true);
   assert.equal(args.strictLeakCheck, true);
+  assert.equal(args.leakAudit, true);
   assert.equal(args.toolMode, 'core');
   assert.equal(args.toolSchemaMode, 'compact');
   assert.equal(args.toolNameMode, 'neutral');
   assert.equal(args.toolGroups, 'core,browser');
   assert.equal(args.toolAllowlist, 'mcp_terminal,mcp_read_file');
   assert.equal(args.sanitizeHermes, false);
+  assert.equal(args.identitySanitization, false);
   assert.equal(args.authHeaderFormat, 'auto');
   assert.equal(args.credentialsPath, '/tmp/creds.json');
 });
@@ -57,16 +61,31 @@ test('readConfig defaults auth header format to auto', () => {
   assert.equal(config.port, 4524);
   assert.equal(config.host, '127.0.0.1');
   assert.equal(config.sanitizeHermes, true);
+  assert.equal(config.identitySanitization, false);
   assert.equal(config.strictLeakCheck, false);
+  assert.equal(config.leakAudit, false);
   assert.equal(config.stripThinking, true);
   assert.equal(config.normalizeShape, true);
   assert.equal(config.dropTools, false);
   assert.equal(config.toolMode, 'all');
   assert.equal(config.toolSchemaMode, 'compact');
-  assert.equal(config.toolNameMode, 'neutral');
+  assert.equal(config.toolNameMode, 'preserve');
   assert.deepEqual(config.toolGroups, DEFAULT_TOOL_GROUPS);
   assert.deepEqual(config.toolAllowlist, []);
   assert.equal(config.dropSystemContext, false);
+});
+
+test('readConfig can enable identity sanitization independently', () => {
+  const config = readConfig([], {
+    SANITIZE_HERMES: '1',
+    IDENTITY_SANITIZATION: '1',
+  });
+
+  assert.equal(config.sanitizeHermes, true);
+  assert.equal(config.identitySanitization, true);
+  assert.equal(config.normalizeShape, true);
+  assert.equal(config.toolSchemaMode, 'compact');
+  assert.equal(config.toolNameMode, 'preserve');
 });
 
 test('readConfig supports tool compatibility modes', () => {

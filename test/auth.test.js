@@ -34,10 +34,16 @@ test('buildAnthropicHeaders emits Claude Code compatible headers', () => {
   assert.equal(resolvedAuthFormat, 'bearer');
   assert.equal(headers.authorization, 'Bearer sk-ant-oat01-test');
   assert.equal(headers['anthropic-client-platform'], 'cli');
+  assert.equal(headers['anthropic-dangerous-direct-browser-access'], 'true');
   assert.equal(headers['x-app'], undefined);
   assert.equal(headers['x-claude-code-session-id'], 'session-123');
+  assert.equal(headers['x-stainless-package-version'], '0.81.0');
+  assert.equal(headers['x-stainless-runtime-version'], 'v22.11.0');
+  assert.equal(headers['x-stainless-retry-count'], '0');
+  assert.equal(headers['x-stainless-timeout'], '600');
   assert.equal(headers['anthropic-beta'].split(',')[0], 'claude-code-20250219');
   assert.match(headers['anthropic-beta'], /claude-code-20250219/);
+  assert.match(headers['anthropic-beta'], /advisor-tool-2026-03-01/);
   assert.match(headers['anthropic-beta'], /custom-beta/);
   assert.equal(headers['content-length'], Buffer.byteLength(JSON.stringify({ ok: true })));
 });

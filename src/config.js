@@ -137,11 +137,23 @@ function parseArgs(argv = []) {
       case '--no-sanitize-hermes':
         args.sanitizeHermes = false;
         break;
+      case '--identity-sanitization':
+        args.identitySanitization = inlineValue === undefined ? true : parseBool(inlineValue, true);
+        break;
+      case '--no-identity-sanitization':
+        args.identitySanitization = false;
+        break;
       case '--strict-leak-check':
         args.strictLeakCheck = inlineValue === undefined ? true : parseBool(inlineValue, true);
         break;
       case '--no-strict-leak-check':
         args.strictLeakCheck = false;
+        break;
+      case '--leak-audit':
+        args.leakAudit = inlineValue === undefined ? true : parseBool(inlineValue, true);
+        break;
+      case '--no-leak-audit':
+        args.leakAudit = false;
         break;
       case '--strip-thinking':
         args.stripThinking = inlineValue === undefined ? true : parseBool(inlineValue, true);
@@ -226,9 +238,15 @@ function readConfig(argv = process.argv.slice(2), env = process.env) {
     sanitizeHermes: args.sanitizeHermes !== undefined
       ? args.sanitizeHermes
       : parseBool(env.SANITIZE_HERMES, true),
+    identitySanitization: args.identitySanitization !== undefined
+      ? args.identitySanitization
+      : parseBool(env.IDENTITY_SANITIZATION, false),
     strictLeakCheck: args.strictLeakCheck !== undefined
       ? args.strictLeakCheck
       : parseBool(env.STRICT_LEAK_CHECK, false),
+    leakAudit: args.leakAudit !== undefined
+      ? args.leakAudit
+      : parseBool(env.LEAK_AUDIT, false),
     stripThinking: args.stripThinking !== undefined
       ? args.stripThinking
       : parseBool(env.STRIP_THINKING, true),
@@ -238,7 +256,7 @@ function readConfig(argv = process.argv.slice(2), env = process.env) {
     dropTools,
     toolMode: dropTools ? 'none' : normalizeToolMode(args.toolMode || env.TOOL_MODE || 'all'),
     toolSchemaMode: normalizeToolSchemaMode(args.toolSchemaMode || env.TOOL_SCHEMA_MODE || 'compact'),
-    toolNameMode: normalizeToolNameMode(args.toolNameMode || env.TOOL_NAME_MODE || 'neutral'),
+    toolNameMode: normalizeToolNameMode(args.toolNameMode || env.TOOL_NAME_MODE || 'preserve'),
     toolGroups: args.toolGroups !== undefined || env.TOOL_GROUPS !== undefined
       ? parseCsv(args.toolGroups || env.TOOL_GROUPS || '')
       : DEFAULT_TOOL_GROUPS,
@@ -278,7 +296,9 @@ Options:
       --dump-requests               Write per-request debug dumps
       --credentials-path <path>     Claude credentials file
       --auth-header-format <mode>   auto, bearer, or x-api-key (default: auto)
-      --no-sanitize-hermes          Disable Hermes identity sanitization
+      --no-sanitize-hermes          Disable all Hermes request transforms
+      --no-identity-sanitization    Keep shape/tool transforms, but do not rewrite identity text or paths
+      --leak-audit                  Log Hermes/OpenClaw leak findings without rejecting requests
       --strict-leak-check           Reject requests with non-info Hermes leak findings
       --no-strip-thinking           Preserve Hermes thinking fields
       --no-normalize-shape          Preserve default temperature, auto tool_choice, and text arrays

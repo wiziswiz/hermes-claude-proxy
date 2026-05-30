@@ -4,8 +4,27 @@ const REQUIRED_BETAS = [
   'interleaved-thinking-2025-05-14',
   'context-management-2025-06-27',
   'prompt-caching-scope-2026-01-05',
+  'advisor-tool-2026-03-01',
   'effort-2025-11-24',
 ];
+
+const STAINLESS_PACKAGE_VERSION = process.env.CLAUDE_CODE_STAINLESS_PACKAGE_VERSION || '0.81.0';
+const STAINLESS_RUNTIME_VERSION = process.env.CLAUDE_CODE_STAINLESS_RUNTIME_VERSION || 'v22.11.0';
+
+function stainlessArch() {
+  const machine = (process.arch || '').toLowerCase();
+  if (machine === 'x64') return 'x64';
+  if (machine === 'arm64') return 'arm64';
+  if (machine === 'ia32') return 'ia32';
+  return machine || 'unknown';
+}
+
+function stainlessOs() {
+  if (process.platform === 'darwin') return 'MacOS';
+  if (process.platform === 'linux') return 'Linux';
+  if (process.platform === 'win32') return 'Windows';
+  return process.platform || 'Unknown';
+}
 
 function detectTokenType(token) {
   if (!token || typeof token !== 'string') return 'none';
@@ -42,15 +61,18 @@ function buildAnthropicHeaders(options) {
     ...authHeader,
     'content-type': 'application/json',
     'anthropic-version': reqHeaders['anthropic-version'] || '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true',
     'anthropic-client-platform': 'cli',
-    'user-agent': 'Anthropic/JS 0.80.0',
+    'user-agent': `Anthropic/JS ${STAINLESS_PACKAGE_VERSION}`,
     'x-claude-code-session-id': sessionId,
     'x-stainless-lang': 'js',
-    'x-stainless-package-version': '0.80.0',
-    'x-stainless-os': process.platform,
-    'x-stainless-arch': process.arch,
+    'x-stainless-package-version': STAINLESS_PACKAGE_VERSION,
+    'x-stainless-os': stainlessOs(),
+    'x-stainless-arch': stainlessArch(),
+    'x-stainless-retry-count': '0',
     'x-stainless-runtime': 'node',
-    'x-stainless-runtime-version': process.versions.node,
+    'x-stainless-runtime-version': STAINLESS_RUNTIME_VERSION,
+    'x-stainless-timeout': '600',
   };
 
   const clientBetas = reqHeaders['anthropic-beta']
@@ -68,4 +90,6 @@ module.exports = {
   buildAnthropicHeaders,
   detectTokenType,
   resolveAuthHeaderFormat,
+  stainlessArch,
+  stainlessOs,
 };

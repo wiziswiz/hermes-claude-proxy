@@ -38,6 +38,14 @@ cat > "$PLIST_PATH" <<PLIST
     <string>auto</string>
     <key>STARTUP_VALIDATE</key>
     <string>1</string>
+    <key>IDENTITY_SANITIZATION</key>
+    <string>0</string>
+    <key>LEAK_AUDIT</key>
+    <string>0</string>
+    <key>STRICT_LEAK_CHECK</key>
+    <string>0</string>
+    <key>TOOL_NAME_MODE</key>
+    <string>preserve</string>
   </dict>
 
   <key>RunAtLoad</key>
@@ -55,9 +63,9 @@ cat > "$PLIST_PATH" <<PLIST
 </plist>
 PLIST
 
-launchctl unload "$PLIST_PATH" >/dev/null 2>&1 || true
-launchctl load "$PLIST_PATH"
-launchctl start "$LABEL" >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)" "$PLIST_PATH" >/dev/null 2>&1 || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
+launchctl kickstart -k "gui/$(id -u)/${LABEL}"
 
 echo "Installed ${LABEL}"
 echo "Plist: ${PLIST_PATH}"
