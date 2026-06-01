@@ -11,6 +11,22 @@ LOG_DIR="${LOG_DIR:-$HOME/Library/Logs/hermes-claude-proxy}"
 
 mkdir -p "$(dirname "$PLIST_PATH")" "$LOG_DIR"
 
+xml_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  value="${value//\"/&quot;}"
+  value="${value//\'/&apos;}"
+  printf '%s' "$value"
+}
+
+TOKEN_ENV_BLOCK=""
+if [[ -n "${ANTHROPIC_TOKEN:-}" ]]; then
+  TOKEN_ENV_BLOCK="    <key>ANTHROPIC_TOKEN</key>
+    <string>$(xml_escape "$ANTHROPIC_TOKEN")</string>"
+fi
+
 cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -60,6 +76,7 @@ cat > "$PLIST_PATH" <<PLIST
     <string>preserve</string>
     <key>DROP_SYSTEM_CONTEXT</key>
     <string>0</string>
+${TOKEN_ENV_BLOCK}
   </dict>
 
   <key>RunAtLoad</key>

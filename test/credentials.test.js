@@ -22,6 +22,17 @@ test('normalizeCredentials accepts camelCase and snake_case token fields', () =>
   assert.equal(creds.tokenType, 'oauth');
 });
 
+test('normalizeCredentials treats env setup tokens without expiry as non-expiring', () => {
+  const creds = normalizeCredentials({
+    accessToken: 'sk-ant-oat01-setup-token',
+  }, 'env');
+
+  assert.equal(creds.expiresAt, null);
+  assert.equal(creds.refreshToken, null);
+  assert.equal(creds.nonExpiring, true);
+  assert.equal(creds.tokenType, 'oauth');
+});
+
 test('tokenPreview keeps only prefix and suffix', () => {
   assert.equal(tokenPreview('sk-ant-oat01-abcdef'), 'sk-ant-o...cdef');
   assert.equal(tokenPreview(null), null);

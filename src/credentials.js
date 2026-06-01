@@ -21,11 +21,15 @@ function normalizeCredentials(raw, source) {
   if (!raw || typeof raw !== 'object') return null;
   const accessToken = raw.accessToken || raw.access_token;
   if (!accessToken) return null;
+  const explicitExpiresAt = normalizeExpiresAt(raw.expiresAt || raw.expires_at);
+  const refreshToken = raw.refreshToken || raw.refresh_token || null;
+  const nonExpiring = source === 'env' && !explicitExpiresAt && !refreshToken;
 
   return {
     accessToken,
-    refreshToken: raw.refreshToken || raw.refresh_token || null,
-    expiresAt: normalizeExpiresAt(raw.expiresAt || raw.expires_at) || Date.now() + 8 * 60 * 60 * 1000,
+    refreshToken,
+    expiresAt: nonExpiring ? null : (explicitExpiresAt || Date.now() + 8 * 60 * 60 * 1000),
+    nonExpiring,
     source,
     scopes: raw.scopes || raw.scope || null,
     subscriptionType: raw.subscriptionType,
@@ -116,11 +120,13 @@ class CredentialManager {
   }
 
   needsRefresh(creds) {
+    if (creds?.nonExpiring) return false;
     if (!creds?.expiresAt) return true;
     return Date.now() + REFRESH_SKEW_MS >= creds.expiresAt;
   }
 
   isHardExpired(creds) {
+    if (creds?.nonExpiring) return false;
     if (!creds?.expiresAt) return true;
     return Date.now() >= creds.expiresAt;
   }
@@ -234,6 +240,8 @@ class CredentialManager {
         creds = await this.refreshToken(creds);
       } else if (this.isHardExpired(creds)) {
         throw new Error('Claude OAuth token is expired and has no refresh token');
+      } else {
+        this.logger.warn('credentials.refresh_unavailable', 'Token needs refresh but no refresh token is available');
       }
     }
 

@@ -225,6 +225,13 @@ launchctl kickstart -k gui/$(id -u)/ai.wiz.hermes-claude-proxy
 hermes gateway restart
 ```
 
+- If `claude setup-token` only prints a `sk-ant-oat...` setup token instead of saving credentials, do not paste it into chat. Install it locally into the launchd service environment:
+
+```bash
+scripts/install-token.sh
+hermes gateway restart
+```
+
 If Hermes still gets "out of extra usage":
 
 - Confirm Hermes is using `base_url: http://127.0.0.1:4524`.
