@@ -305,7 +305,7 @@ Options:
       --drop-tools                  Diagnostic: remove tools before forwarding
       --tool-mode <mode>            all, core, or none (default: all)
       --tool-schema-mode <mode>     full or compact (default: compact)
-      --tool-name-mode <mode>       preserve or neutral (default: neutral)
+      --tool-name-mode <mode>       preserve or neutral (default: preserve)
       --tool-groups <groups>        Comma-separated tool groups to keep
       --tool-allowlist <names>      Comma-separated sanitized tool names to keep
       --drop-system-context         Diagnostic: do not move original system context into user message

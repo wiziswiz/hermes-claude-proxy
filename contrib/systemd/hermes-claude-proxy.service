@@ -11,6 +11,17 @@ Restart=always
 RestartSec=3
 Environment=AUTH_HEADER_FORMAT=auto
 Environment=STARTUP_VALIDATE=1
+Environment=SANITIZE_HERMES=1
+Environment=IDENTITY_SANITIZATION=0
+Environment=LEAK_AUDIT=0
+Environment=STRICT_LEAK_CHECK=0
+Environment=STRIP_THINKING=1
+Environment=NORMALIZE_SHAPE=1
+Environment=DROP_TOOLS=0
+Environment=TOOL_MODE=all
+Environment=TOOL_SCHEMA_MODE=compact
+Environment=TOOL_NAME_MODE=preserve
+Environment=DROP_SYSTEM_CONTEXT=0
 
 # Override this if Claude credentials live somewhere else.
 Environment=CREDENTIALS_PATH=%h/.claude/.credentials.json

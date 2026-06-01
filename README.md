@@ -163,7 +163,7 @@ Common variables:
 - `JSON_LOGS`: emits structured JSON logs
 - `DUMP_REQUESTS`: writes per-request debug dumps
 - `DUMP_DIR`: request dump directory
-- `SANITIZE_HERMES`: enables Hermes identity sanitization, default `1`
+- `SANITIZE_HERMES`: enables the Hermes compatibility transform pipeline, default `1`. Identity/path rewriting stays off unless `IDENTITY_SANITIZATION=1`.
 - `IDENTITY_SANITIZATION`: rewrites Hermes/OpenClaw identity text and paths when `SANITIZE_HERMES=1`, default `0`. Leave off for normal use; enable only if you need to debug an upstream classifier regression.
 - `LEAK_AUDIT`: logs Hermes/OpenClaw leak findings without rejecting requests, default `0`
 - `STRICT_LEAK_CHECK`: rejects requests with non-info leak findings, default `0`; enables leak auditing for that request path
@@ -180,6 +180,8 @@ Common variables:
 - `REQUIRE_TOKEN_AT_STARTUP`: exit if no valid token is available
 
 ## Background Service
+
+The launchd installer and systemd example pin the same minimal production defaults as `npm start`: identity/path rewriting off, leak auditing off, compact tool schemas, and original Hermes tool names preserved.
 
 macOS launchd:
 

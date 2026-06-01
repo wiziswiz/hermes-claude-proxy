@@ -38,14 +38,28 @@ cat > "$PLIST_PATH" <<PLIST
     <string>auto</string>
     <key>STARTUP_VALIDATE</key>
     <string>1</string>
+    <key>SANITIZE_HERMES</key>
+    <string>1</string>
     <key>IDENTITY_SANITIZATION</key>
     <string>0</string>
     <key>LEAK_AUDIT</key>
     <string>0</string>
     <key>STRICT_LEAK_CHECK</key>
     <string>0</string>
+    <key>STRIP_THINKING</key>
+    <string>1</string>
+    <key>NORMALIZE_SHAPE</key>
+    <string>1</string>
+    <key>DROP_TOOLS</key>
+    <string>0</string>
+    <key>TOOL_MODE</key>
+    <string>all</string>
+    <key>TOOL_SCHEMA_MODE</key>
+    <string>compact</string>
     <key>TOOL_NAME_MODE</key>
     <string>preserve</string>
+    <key>DROP_SYSTEM_CONTEXT</key>
+    <string>0</string>
   </dict>
 
   <key>RunAtLoad</key>
