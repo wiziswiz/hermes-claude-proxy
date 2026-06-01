@@ -225,7 +225,7 @@ launchctl kickstart -k gui/$(id -u)/ai.wiz.hermes-claude-proxy
 hermes gateway restart
 ```
 
-- If `claude setup-token` only prints a `sk-ant-oat...` setup token instead of saving credentials, do not paste it into chat. Install it locally into the launchd service environment:
+- If `claude setup-token` only prints a `sk-ant-oat...` setup token instead of saving credentials, do not paste it into chat. Install it locally into both the proxy launchd service and Hermes `.env` files:
 
 ```bash
 scripts/install-token.sh
