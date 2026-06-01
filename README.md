@@ -207,6 +207,24 @@ Adjust `WorkingDirectory`, `ExecStart`, and `CREDENTIALS_PATH` before installing
 
 ## Troubleshooting
 
+If Hermes says "Provider authentication failed":
+
+- Check the Hermes gateway logs first; this message usually comes from Hermes before the proxy receives a model request.
+- If the log says `No Anthropic credentials found`, remove any fake `api_key: dummy` from the Hermes `model:` config, then restart the Hermes gateway so it reloads credentials:
+
+```bash
+hermes gateway restart
+hermes --profile openclaw-mirror gateway restart
+```
+
+- If the proxy logs show `invalid_grant` while refreshing OAuth, refresh Claude Code auth and restart the proxy and gateway:
+
+```bash
+claude setup-token
+launchctl kickstart -k gui/$(id -u)/ai.wiz.hermes-claude-proxy
+hermes gateway restart
+```
+
 If Hermes still gets "out of extra usage":
 
 - Confirm Hermes is using `base_url: http://127.0.0.1:4524`.
