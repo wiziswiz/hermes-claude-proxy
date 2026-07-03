@@ -62,9 +62,24 @@ function shouldRewriteBody(req) {
     && typeof req.body === 'object';
 }
 
+// Strip the conventional /anthropic mount prefix. Hermes' provider gates
+// (_anthropic_base_url_override_ok, _detect_api_mode_for_url) refuse a
+// custom base_url unless its host is *.anthropic.com or its path ends in
+// /anthropic — otherwise Hermes silently falls back to api.anthropic.com
+// directly, which bills OAuth traffic against the "extra usage" pool.
+// Accepting the prefix lets config.yaml point at http://host:4524/anthropic.
+function stripAnthropicPrefix(req, res, next) {
+  if (req.url === '/anthropic' || req.url.startsWith('/anthropic/')) {
+    req.url = req.url.slice('/anthropic'.length) || '/';
+  }
+  next();
+}
+
 function buildTargetUrl(config, req) {
   const base = new URL(config.anthropicBaseUrl);
-  const target = new URL(req.originalUrl, base.origin);
+  // req.url, not req.originalUrl: the upstream path must exclude any
+  // stripped /anthropic mount prefix.
+  const target = new URL(req.url, base.origin);
   if (req.path === '/v1/messages' || req.path === '/v1/messages/count_tokens') {
     target.searchParams.set('beta', 'true');
   }
@@ -136,6 +151,7 @@ function createProxyApp({ config, logger, credentials }) {
   let proxySessionId = randomUUID();
 
   app.disable('x-powered-by');
+  app.use(stripAnthropicPrefix);
   app.use(express.json({ limit: config.bodyLimit }));
 
   async function forwardAnthropicRequest(req, res) {
@@ -400,8 +416,10 @@ function createProxyApp({ config, logger, credentials }) {
 }
 
 module.exports = {
+  buildTargetUrl,
   createProxyApp,
   makeRequest,
   shouldRewriteBody,
+  stripAnthropicPrefix,
   summarizeSystem,
 };
