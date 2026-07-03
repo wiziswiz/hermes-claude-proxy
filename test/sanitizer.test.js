@@ -366,3 +366,29 @@ test('response desanitization restores neutral tool aliases', () => {
   assert.equal(json.content[0].name, 'mcp_session_search');
   assert.equal(json.content[1].name, 'mcp_terminal');
 });
+
+test('tool group filter matches OAuth double-underscore wire names', () => {
+  // Hermes emits mcp__<tool> on the OAuth wire (GH-25255: single-underscore
+  // mcp_ names flip Anthropic billing to the extra-usage lane). The group
+  // whitelist uses mcp_<tool> names — matching must be prefix-insensitive.
+  const { body } = sanitizeRequest({
+    model: 'claude-opus-4-8',
+    messages: [],
+    tools: [
+      { name: 'mcp__read_file', description: 'x', input_schema: { type: 'object' } },
+      { name: 'mcp__browser_back', description: 'x', input_schema: { type: 'object' } },
+      { name: 'mcp__delegate_task', description: 'x', input_schema: { type: 'object' } },
+      { name: 'mcp__web_search', description: 'x', input_schema: { type: 'object' } },
+      { name: 'mcp__not_a_known_tool', description: 'x', input_schema: { type: 'object' } },
+    ],
+  }, {
+    identitySanitization: false,
+    toolMode: 'all',
+    toolNameMode: 'preserve',
+    toolGroups: ['core', 'browser', 'automation', 'search'],
+    toolAllowlist: [],
+  });
+
+  const kept = body.tools.map(t => t.name);
+  assert.deepEqual(kept, ['mcp__read_file', 'mcp__browser_back', 'mcp__delegate_task', 'mcp__web_search']);
+});

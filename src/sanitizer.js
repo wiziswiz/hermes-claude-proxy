@@ -255,12 +255,12 @@ const TOOL_GROUPS = {
     'mcp_browser_vision',
   ],
   desktop: ['mcp_computer_use'],
-  automation: ['mcp_cronjob', 'mcp_task_dispatch'],
-  memory: ['mcp_memory', 'mcp_conversation_search'],
-  skills: ['mcp_skill_edit', 'mcp_skill_view', 'mcp_skills_list'],
+  automation: ['mcp_cronjob', 'mcp_task_dispatch', 'mcp_delegate_task'],
+  memory: ['mcp_memory', 'mcp_conversation_search', 'mcp_session_search'],
+  skills: ['mcp_skill_edit', 'mcp_skill_view', 'mcp_skills_list', 'mcp_skill_manage'],
   media: ['mcp_image_generate', 'mcp_vision_analyze', 'mcp_text_to_speech'],
   comms: ['mcp_clarify', 'mcp_send_message'],
-  search: ['mcp_x_search'],
+  search: ['mcp_x_search', 'mcp_web_search', 'mcp_web_extract'],
 };
 
 const TOOL_NEUTRAL_ALIASES = {
@@ -746,14 +746,35 @@ function dropToolDefinitions(body, report) {
   }
 }
 
+// Canonical form for whitelist matching: Hermes emits `mcp__<tool>` on the
+// OAuth wire (double underscore — single-underscore `mcp_` names flip
+// Anthropic's billing classifier to the extra-usage lane, GH-25255 upstream),
+// while TOOL_GROUPS and legacy configs use the single-underscore `mcp_<tool>`
+// form, and neutral aliases are bare. Strip either prefix so all three forms
+// of the same tool compare equal.
+function canonicalToolName(name) {
+  if (typeof name !== 'string') return '';
+  const trimmed = name.trim();
+  if (trimmed.startsWith('mcp__')) return trimmed.slice('mcp__'.length);
+  if (trimmed.startsWith('mcp_')) return trimmed.slice('mcp_'.length);
+  return trimmed;
+}
+
 function normalizeToolAllowlist(names = []) {
-  return new Set(
-    names
-      .map(name => (typeof name === 'string' ? name.trim() : ''))
-      .filter(Boolean)
-      .map(name => TOOL_NEUTRAL_ALIASES_REVERSE[name] || name)
-      .map(name => TOOL_NAME_RENAMES[name] || name)
-  );
+  const set = new Set();
+  for (const raw of names) {
+    const name = typeof raw === 'string' ? raw.trim() : '';
+    if (!name) continue;
+    const unaliased = TOOL_NEUTRAL_ALIASES_REVERSE[name] || name;
+    // Keep BOTH the original and the disguise-renamed form: with
+    // toolNameMode "preserve" the incoming tool still carries its original
+    // name (e.g. delegate_task), while renamed wires carry the mapped name
+    // (task_dispatch). The allowlist must match either.
+    set.add(canonicalToolName(unaliased));
+    set.add(canonicalToolName(TOOL_NAME_RENAMES[unaliased] || unaliased));
+  }
+  set.delete('');
+  return set;
 }
 
 function expandToolGroups(groups = [], report) {
@@ -795,7 +816,7 @@ function filterToolDefinitions(body, options, report) {
   if (keepNames.size === 0) return;
 
   const before = body.tools.length;
-  body.tools = body.tools.filter(tool => tool && keepNames.has(tool.name));
+  body.tools = body.tools.filter(tool => tool && keepNames.has(canonicalToolName(tool.name)));
   const after = body.tools.length;
 
   if (after === 0) {
