@@ -13,7 +13,7 @@ const {
   summarizeFindings,
 } = require('./sanitizer');
 
-function makeRequest(targetUrl, method, headers, payload) {
+function makeRequest(targetUrl, method, headers, payload, timeoutMs = 600_000) {
   return new Promise((resolve, reject) => {
     const transport = targetUrl.protocol === 'https:' ? https : http;
     const proxyReq = transport.request(targetUrl, { method, headers }, (proxyRes) => {
@@ -30,6 +30,11 @@ function makeRequest(targetUrl, method, headers, payload) {
     });
 
     proxyReq.on('error', reject);
+    if (timeoutMs > 0) {
+      proxyReq.setTimeout(timeoutMs, () => {
+        proxyReq.destroy(new Error(`upstream timeout after ${timeoutMs}ms`));
+      });
+    }
     if (payload) proxyReq.write(payload);
     proxyReq.end();
   });
@@ -92,6 +97,16 @@ function formatLeakFindingsForLog(findings, includeSamples = false) {
     const { sample, ...withoutSample } = finding;
     return withoutSample;
   });
+}
+
+function countExpandedToolGroupNames(report) {
+  return report.normalizations
+    .filter(item => item.label === 'tool-group')
+    .reduce((total, item) => {
+      const separator = item.detail.lastIndexOf(':');
+      const count = Number.parseInt(item.detail.slice(separator + 1), 10);
+      return total + (Number.isFinite(count) ? count : 0);
+    }, 0);
 }
 
 function sendSuccessfulResponse(proxyRes, req, res, shouldDesanitize) {
@@ -231,6 +246,19 @@ function createProxyApp({ config, logger, credentials }) {
 
       logger.info('request.incoming', `${req.method} ${req.originalUrl}`, meta);
       if (shouldRewriteBody(req)) {
+        if (
+          config.toolMode === 'all'
+          && config.toolAllowlist.length === 0
+          && config.toolGroups.length > 0
+          && sanitizerReport.normalizations.some(item => ['tool-group', 'unknown-tool-group'].includes(item.label))
+          && countExpandedToolGroupNames(sanitizerReport) === 0
+        ) {
+          logger.warn('sanitizer.empty_tool_groups', 'Configured tool groups resolved to zero tool names; forwarding all tools', {
+            request_id: requestId,
+            tool_groups: config.toolGroups,
+          });
+        }
+
         if (leakFindings.length > 0) {
           logger.warn('sanitizer.leaks', 'Hermes-specific request labels remain after sanitization', {
             request_id: requestId,
@@ -266,7 +294,7 @@ function createProxyApp({ config, logger, credentials }) {
       });
 
       for (let attempt = 0; attempt <= config.maxRetries; attempt += 1) {
-        const result = await makeRequest(targetUrl, req.method, headerResult.headers, payload);
+        const result = await makeRequest(targetUrl, req.method, headerResult.headers, payload, config.requestTimeoutMs);
         const statusCode = result.proxyRes.statusCode;
 
         if (statusCode === 401 && attempt < config.maxRetries) {

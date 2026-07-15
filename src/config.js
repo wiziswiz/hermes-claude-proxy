@@ -200,6 +200,9 @@ function parseArgs(argv = []) {
       case '--retry-base-ms':
         args.retryBaseMs = takeValue();
         break;
+      case '--request-timeout-ms':
+        args.requestTimeoutMs = takeValue();
+        break;
       case '--startup-validate':
         args.startupValidate = inlineValue === undefined ? true : parseBool(inlineValue, true);
         break;
@@ -270,6 +273,7 @@ function readConfig(argv = process.argv.slice(2), env = process.env) {
     authHeaderFormat: normalizeAuthHeaderFormat(args.authHeaderFormat || env.AUTH_HEADER_FORMAT || 'auto'),
     maxRetries: parseInteger(args.maxRetries || env.MAX_RETRIES || '3', 'MAX_RETRIES'),
     retryBaseMs: parseInteger(args.retryBaseMs || env.RETRY_BASE_MS || '2000', 'RETRY_BASE_MS'),
+    requestTimeoutMs: parseInteger(args.requestTimeoutMs || env.REQUEST_TIMEOUT_MS || '600000', 'REQUEST_TIMEOUT_MS'),
     startupValidate: args.startupValidate !== undefined
       ? args.startupValidate
       : parseBool(env.STARTUP_VALIDATE, true),
@@ -311,6 +315,7 @@ Options:
       --drop-system-context         Diagnostic: do not move original system context into user message
       --anthropic-base-url <url>    Upstream Anthropic base URL
       --dump-dir <path>             Debug dump directory
+      --request-timeout-ms <ms>     Upstream request timeout in ms (default: 600000)
       --no-startup-validate         Skip startup credential validation
       --require-token-at-startup    Exit if no usable token is available
   -v, --version                     Print version
