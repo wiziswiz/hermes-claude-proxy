@@ -794,14 +794,27 @@ function expandToolGroups(groups = [], report) {
 }
 
 function filterToolDefinitions(body, options, report) {
-  if (!Array.isArray(body.tools)) return;
-
   const mode = options.toolMode || 'all';
   const hasAllowlist = Array.isArray(options.toolAllowlist) && options.toolAllowlist.length > 0;
   const selectedNames = hasAllowlist
     ? options.toolAllowlist
     : expandToolGroups(options.toolGroups, report);
   const allowlist = normalizeToolAllowlist(selectedNames);
+
+  if (
+    allowlist.size === 0
+    && mode === 'all'
+    && !hasAllowlist
+    && Array.isArray(options.toolGroups)
+    && options.toolGroups.length > 0
+  ) {
+    report.normalize(
+      'warn.empty-tool-group-expansion',
+      `toolGroups [${options.toolGroups.join(',')}] resolved to zero tool names; all tools will pass through`
+    );
+  }
+
+  if (!Array.isArray(body.tools)) return;
 
   if (mode === 'none') {
     dropToolDefinitions(body, report);

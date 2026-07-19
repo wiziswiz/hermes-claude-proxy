@@ -252,6 +252,37 @@ test('sanitizeRequest can keep named tool groups', () => {
   assert.ok(report.normalizations.some(item => item.label === 'filter-tools' && item.detail === '4->2:mcp_browser_click,mcp_terminal'));
 });
 
+test('filterToolDefinitions warns when tool groups expand to zero names in mode=all', () => {
+  const { body, report } = sanitizeRequest({
+    tools: [
+      { name: 'some_tool', description: 'desc', input_schema: { type: 'object', properties: {} } },
+    ],
+  }, {
+    toolMode: 'all',
+    toolGroups: ['nonexistent_group_xyz'],
+    toolAllowlist: [],
+  });
+
+  assert.ok(Array.isArray(body.tools));
+  assert.equal(body.tools.length, 1);
+  assert.ok(report.normalizations.some(
+    item => item.label === 'warn.empty-tool-group-expansion'
+  ), 'expected warn.empty-tool-group-expansion normalization entry');
+});
+
+test('empty tool group expansion is reported when the request has no tools array', () => {
+  const { body, report } = sanitizeRequest({ messages: [] }, {
+    toolMode: 'all',
+    toolGroups: ['nonexistent_group_xyz'],
+    toolAllowlist: [],
+  });
+
+  assert.equal(body.tools, undefined);
+  assert.ok(report.normalizations.some(
+    item => item.label === 'warn.empty-tool-group-expansion'
+  ), 'expected warn.empty-tool-group-expansion normalization entry');
+});
+
 test('sanitizeRequest tool allowlist accepts original names before rename', () => {
   const { body, report } = sanitizeRequest({
     tools: [

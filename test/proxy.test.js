@@ -1,6 +1,13 @@
 const assert = require('node:assert/strict');
+const http = require('node:http');
 const test = require('node:test');
-const { buildTargetUrl, shouldRewriteBody, stripAnthropicPrefix, summarizeSystem } = require('../src/proxy');
+const {
+  buildTargetUrl,
+  makeRequest,
+  shouldRewriteBody,
+  stripAnthropicPrefix,
+  summarizeSystem,
+} = require('../src/proxy');
 
 function req(method, path, body = {}) {
   return { method, path, body };
@@ -48,4 +55,25 @@ test('summarizeSystem reports billing header location', () => {
 
   assert.match(summary, /blocks\[2\]/);
   assert.match(summary, /billing@0/);
+});
+
+test('makeRequest rejects with upstream timeout error', async (t) => {
+  const server = http.createServer(() => {});
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve());
+  }));
+
+  const { port } = server.address();
+  const url = new URL(`http://127.0.0.1:${port}/v1/messages`);
+  await assert.rejects(
+    () => makeRequest(
+      url,
+      'POST',
+      { 'content-type': 'application/json' },
+      JSON.stringify({ test: 1 }),
+      50
+    ),
+    /timeout|socket hang up/i
+  );
 });

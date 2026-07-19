@@ -99,16 +99,6 @@ function formatLeakFindingsForLog(findings, includeSamples = false) {
   });
 }
 
-function countExpandedToolGroupNames(report) {
-  return report.normalizations
-    .filter(item => item.label === 'tool-group')
-    .reduce((total, item) => {
-      const separator = item.detail.lastIndexOf(':');
-      const count = Number.parseInt(item.detail.slice(separator + 1), 10);
-      return total + (Number.isFinite(count) ? count : 0);
-    }, 0);
-}
-
 function sendSuccessfulResponse(proxyRes, req, res, shouldDesanitize) {
   copyResponseHeaders(proxyRes, res);
   res.status(proxyRes.statusCode);
@@ -176,7 +166,7 @@ function createProxyApp({ config, logger, credentials }) {
     try {
       let body = ['GET', 'HEAD'].includes(req.method) ? null : req.body;
       let sanitized = body;
-      let sanitizerReport = { changed: false, replacements: [] };
+      let sanitizerReport = { changed: false, replacements: [], normalizations: [] };
       let leakFindings = [];
       let rewritten = body;
       if (shouldRewriteBody(req)) {
@@ -246,13 +236,9 @@ function createProxyApp({ config, logger, credentials }) {
 
       logger.info('request.incoming', `${req.method} ${req.originalUrl}`, meta);
       if (shouldRewriteBody(req)) {
-        if (
-          config.toolMode === 'all'
-          && config.toolAllowlist.length === 0
-          && config.toolGroups.length > 0
-          && sanitizerReport.normalizations.some(item => ['tool-group', 'unknown-tool-group'].includes(item.label))
-          && countExpandedToolGroupNames(sanitizerReport) === 0
-        ) {
+        if (sanitizerReport.normalizations.some(
+          item => item.label === 'warn.empty-tool-group-expansion'
+        )) {
           logger.warn('sanitizer.empty_tool_groups', 'Configured tool groups resolved to zero tool names; forwarding all tools', {
             request_id: requestId,
             tool_groups: config.toolGroups,

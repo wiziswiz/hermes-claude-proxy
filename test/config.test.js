@@ -112,3 +112,18 @@ test('DROP_TOOLS forces tool mode none', () => {
   assert.equal(config.dropTools, true);
   assert.equal(config.toolMode, 'none');
 });
+
+test('readConfig defaults requestTimeoutMs to 600000', () => {
+  const config = readConfig([], {});
+  assert.equal(config.requestTimeoutMs, 600000);
+});
+
+test('REQUEST_TIMEOUT_MS env var sets requestTimeoutMs', () => {
+  const config = readConfig([], { REQUEST_TIMEOUT_MS: '30000' });
+  assert.equal(config.requestTimeoutMs, 30000);
+});
+
+test('--request-timeout-ms CLI flag sets requestTimeoutMs', () => {
+  const config = readConfig(['--request-timeout-ms', '15000'], {});
+  assert.equal(config.requestTimeoutMs, 15000);
+});
