@@ -153,6 +153,7 @@ Common variables:
 - `CREDENTIALS_PATH`: Claude credentials file path
 - `ANTHROPIC_TOKEN`: direct token override
 - `ANTHROPIC_BASE_URL`: upstream Anthropic URL
+- `REQUEST_TIMEOUT_MS`: per-request upstream timeout in milliseconds (also `--request-timeout-ms`), default `600000`; set `0` to disable
 - `CLAUDE_CONFIG_PATH`: optional `.claude.json` path used to copy Claude account metadata into request `metadata.user_id`
 - `CLAUDE_CODE_VERSION`: Claude Code version used in the signed billing header, default `2.1.112`
 - `CLAUDE_CODE_ENTRYPOINT`: Claude Code entrypoint used in the signed billing header, default `sdk-cli`
