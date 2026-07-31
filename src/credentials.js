@@ -285,7 +285,6 @@ class CredentialManager {
       ready: !!creds?.accessToken && !hardExpired,
       source: creds?.source || 'none',
       token_type: creds?.tokenType || 'none',
-      token_preview: tokenPreview(creds?.accessToken),
       refreshable: !!creds?.refreshToken,
       expired: hardExpired,
       needs_refresh: creds ? this.needsRefresh(creds) : false,
