@@ -1,5 +1,12 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+
+// Keep this suite hermetic: src/rewrite.js captures CLAUDE_CODE_ENTRYPOINT at
+// require time (defaulting to 'sdk-cli'), and running the suite inside a
+// Claude Code shell leaks CLAUDE_CODE_ENTRYPOINT=cli into the environment.
+// Clear it BEFORE requiring the module under test so the default applies.
+delete process.env.CLAUDE_CODE_ENTRYPOINT;
+
 const {
   buildBillingHeader,
   computeContentHash,
