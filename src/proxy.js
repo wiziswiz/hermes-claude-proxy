@@ -13,10 +13,19 @@ const {
   summarizeFindings,
 } = require('./sanitizer');
 
+function isUpstreamTimeoutError(err) {
+  if (!err) return false;
+  return err.code === 'ETIMEDOUT'
+    || err.code === 'ESOCKETTIMEDOUT'
+    || /timeout/i.test(err.message || '');
+}
+
 function makeRequest(targetUrl, method, headers, payload, timeoutMs = 600_000) {
   return new Promise((resolve, reject) => {
     const transport = targetUrl.protocol === 'https:' ? https : http;
+    let settledProxyRes = null;
     const proxyReq = transport.request(targetUrl, { method, headers }, (proxyRes) => {
+      settledProxyRes = proxyRes;
       if (proxyRes.statusCode >= 400) {
         const chunks = [];
         proxyRes.on('data', chunk => chunks.push(chunk));
@@ -32,7 +41,15 @@ function makeRequest(targetUrl, method, headers, payload, timeoutMs = 600_000) {
     proxyReq.on('error', reject);
     if (timeoutMs > 0) {
       proxyReq.setTimeout(timeoutMs, () => {
-        proxyReq.destroy(new Error(`upstream timeout after ${timeoutMs}ms`));
+        // Tag the error so downstream handlers can classify timeout-caused
+        // failures. The socket inactivity timeout can fire AFTER the promise
+        // has resolved (headers already delivered); in that case the tagged
+        // error is stashed on proxyRes because destroy(err) only reaches the
+        // (already-settled) reject handler, not proxyRes 'error' listeners.
+        const timeoutError = new Error(`upstream timeout after ${timeoutMs}ms`);
+        timeoutError.code = 'ETIMEDOUT';
+        if (settledProxyRes) settledProxyRes.upstreamTimeoutError = timeoutError;
+        proxyReq.destroy(timeoutError);
       });
     }
     if (payload) proxyReq.write(payload);
@@ -99,7 +116,7 @@ function formatLeakFindingsForLog(findings, includeSamples = false) {
   });
 }
 
-function sendSuccessfulResponse(proxyRes, req, res, shouldDesanitize) {
+function sendSuccessfulResponse(proxyRes, req, res, shouldDesanitize, { logger, requestId }) {
   copyResponseHeaders(proxyRes, res);
   res.status(proxyRes.statusCode);
 
@@ -108,7 +125,32 @@ function sendSuccessfulResponse(proxyRes, req, res, shouldDesanitize) {
     return;
   }
 
+  // Own the full upstream response lifecycle. makeRequest() resolves when
+  // HEADERS arrive; if the upstream socket dies afterwards (inactivity
+  // timeout, reset, aborted), the settled promise cannot reject, so failures
+  // must be handled here. A truncated stream must NEVER look like a clean
+  // 200 EOF: destroy the downstream connection so the client sees a broken
+  // stream, and log the cause (timeout identified via the tagged error).
+  let upstreamFailed = false;
+  function failDownstream(err) {
+    if (upstreamFailed || res.writableEnded) return;
+    upstreamFailed = true;
+    const cause = proxyRes.upstreamTimeoutError
+      || (err instanceof Error ? err : new Error('upstream connection aborted'));
+    logger.error('upstream.stream_failed', 'Upstream failed mid-response; destroying downstream connection', {
+      request_id: requestId,
+      status: proxyRes.statusCode,
+      timeout: isUpstreamTimeoutError(cause),
+      code: cause.code || null,
+      error: cause.message,
+    });
+    res.destroy(cause);
+  }
+  proxyRes.on('error', failDownstream);
+  proxyRes.on('aborted', failDownstream);
+
   if (!shouldDesanitize) {
+    // pipe() does not forward source errors; failDownstream above covers them.
     proxyRes.pipe(res);
     return;
   }
@@ -128,16 +170,17 @@ function sendSuccessfulResponse(proxyRes, req, res, shouldDesanitize) {
       }
     });
     proxyRes.on('end', () => {
+      if (upstreamFailed) return;
       if (buffer) res.write(`${desanitizeSseLine(buffer)}\n`);
       res.end();
     });
-    proxyRes.on('error', () => res.end());
     return;
   }
 
   const chunks = [];
   proxyRes.on('data', chunk => chunks.push(chunk));
   proxyRes.on('end', () => {
+    if (upstreamFailed) return;
     const raw = Buffer.concat(chunks).toString('utf8');
     try {
       const out = JSON.stringify(desanitizeResponseJson(JSON.parse(raw)));
@@ -147,7 +190,6 @@ function sendSuccessfulResponse(proxyRes, req, res, shouldDesanitize) {
       res.end(raw);
     }
   });
-  proxyRes.on('error', () => res.end());
 }
 
 function createProxyApp({ config, logger, credentials }) {
@@ -342,7 +384,7 @@ function createProxyApp({ config, logger, credentials }) {
           return res.status(statusCode).end(result.body);
         }
 
-        sendSuccessfulResponse(result.proxyRes, req, res, config.sanitizeHermes);
+        sendSuccessfulResponse(result.proxyRes, req, res, config.sanitizeHermes, { logger, requestId });
         return undefined;
       }
 
@@ -352,10 +394,25 @@ function createProxyApp({ config, logger, credentials }) {
         request_id: requestId,
       });
     } catch (err) {
+      const timeout = isUpstreamTimeoutError(err);
       logger.error('request.failed', 'Proxy request failed', {
         request_id: requestId,
+        timeout,
         error: err.message,
       });
+      if (res.headersSent) {
+        // Never present a broken upstream as a clean EOF or leave the client
+        // hanging: break the downstream connection.
+        res.destroy(err);
+        return undefined;
+      }
+      if (timeout) {
+        return res.status(504).json({
+          type: 'error',
+          error: { type: 'gateway_timeout', message: err.message },
+          request_id: requestId,
+        });
+      }
       const status = /credential|token|auth/i.test(err.message) ? 401 : 500;
       return res.status(status).json({
         type: 'error',
@@ -432,6 +489,7 @@ function createProxyApp({ config, logger, credentials }) {
 module.exports = {
   buildTargetUrl,
   createProxyApp,
+  isUpstreamTimeoutError,
   makeRequest,
   shouldRewriteBody,
   stripAnthropicPrefix,
